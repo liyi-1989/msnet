@@ -1,0 +1,20 @@
+{
+    "collab_server" : "",
+    "contents" : "library(Matrix)\nsource(\"senet.R\")\n\n# Block Version\n# Y: n*py\n# X: n*px\n# B: px*py\n# n=dim(Y)[1]\n# py=dim(Y)[2]\n# px=dim(X)[2]\n\n## 1. gnerate parameter\npx=100\npy=20\nn=100\nB=matrix(0,px,py)\nY=matrix(0,n,py)\nX=matrix(0,n,px)\nX=list(py)\nP=matrix(0,px*py,px*py)\n\nlambda1=10\nlambda2=10\nnoise.signal = 0.25\nnoise.response = 10\nctr=list(L = L2,\n     use.gram = TRUE,\n     maxiter = 10000, \n     tol = 1e-8,\n     init = NULL,\n     sigma = 0.9)\n\nGL=crossprod( fd(px*py) ) \nLambda = GL\nLambda2 = GL+ t(P)%*%GL%*%P\n\nL <- Ll2(Xt, Lambda, lambda2 = lambda2) ### fixed step-size\nL2 <- Ll2(Xt, Lambda2, lambda2 = lambda2) ### fixed step-size\n\n## 2. generate data: Y, X, with B\n\nfor(i in 1:px){\n  for(j in 1:py){\n    P[(i-1)*py+j,(j-1)*px+i]=1 # Permutation matrix \n  }\n}\n\nbetastar <- sapply(1:px, function(t) (20 < t && t < 40)*((-1)*(30 - t)^2+100)/200 +\n                     (60 < t && t < 80)*((70 - t)^2-100)/200)\nfor(i in 1:py){\n  B[,i]=betastar[(1:px-i)%%px+1]\n  data <- simblock1d(n = n, p=px, noise.signal = noise.signal, noise.response = noise.response, B[,i])\n  Y[,i]=data$y\n  X[[i]]=data$Xt\n}\n\n# Block to long\ndata=list(Xt=as.matrix(bdiag(X)), y=c(Y), beta = c(B)) #Xt=bdiag(lapply(1:py,function(dumy,a){a},X)) # same X # npy*pxpy\n\n# 3. fit the model\n#------------------------------\nout <- senet_fista(data$Xt, data$y, Lambda, lossfun = l2loss, gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2,\n                   stepsize = \"fixed\",\n                   control = ctr)\n\nBhat=matrix(out$beta,byrow = FALSE,nrow = px, ncol = py)\n#------------------------------\n\nout2 <- senet_fista(data$Xt, data$y, Lambda2, lossfun = l2loss, gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2,\n                   stepsize = \"fixed\",\n                   control = ctr)\n\nBhat2=matrix(out2$beta,byrow = FALSE,nrow = px, ncol = py)\n\n#------------------------------\nimage(B)\n\nnorm(B-Bhat,\"F\")\nimage(Bhat)\n\nnorm(B-Bhat2,\"F\")\nimage(Bhat2)\n\n\n\n",
+    "created" : 1482848946829.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3168305057",
+    "id" : "3BD2021",
+    "lastKnownWriteTime" : 1482956076,
+    "last_content_update" : 1482956076300,
+    "path" : "D:/works/msenet/msnet.R",
+    "project_path" : "msnet.R",
+    "properties" : {
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
