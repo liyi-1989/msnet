@@ -326,7 +326,8 @@ Llogistic <- function(X, Lambda, lambda2){
 ### 1st example: two bumps
 
 ### 
-simblock1d <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,...){
+simblock1d <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,dataseed=1,...){
+  set.seed(dataseed)
   Xt <- matrix(ncol = p, nrow = n)
   for(i in 1:n){
     bi <- runif(5, 0, 5)
