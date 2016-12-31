@@ -1,2 +1,4 @@
-./results/*
-.Rproj*
+results/*
+Rproj*
+run1.err
+run1.out 
