@@ -1,3 +1,6 @@
+.Rhistory
+.Rproj.user/*
+.ipynb_checkpoints/*
 results/*
 Rproj*
 run1.err
