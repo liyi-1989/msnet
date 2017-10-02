@@ -1,9 +1,11 @@
-source("msnet_simu_fun.R")
-
+source("msnet_simu_fun2.R")
+library(Rmpi)
+library(snow)
 
 cl=makeCluster(30)
-clusterEvalQ(cl,{library(Matrix);source("senet.R")})
-clusterExport(cl,c("paras","betastar","ctr","P","GL","Lambda","Lambda2","Lambda3","df")) #clusterCall(cl,print,a+b)
-clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,betastar,Lambda2,"fixed",T,df,"2")
+clusterEvalQ(cl,{library(Matrix);source("senet.R");source("utils.R")})
+clusterExport(cl,c("ctr","c1","df")) #clusterCall(cl,print,a+b)
+clusterApplyLB(cl, 1:nrow(df), simu,ctr,c1,df)
 stopCluster(cl)
 
+save(ctr,c1,df,file = "./results/df.RData")

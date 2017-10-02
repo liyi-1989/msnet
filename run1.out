@@ -17,19 +17,75 @@ Type 'demo()' for some demos, 'help()' for on-line help, or
 'help.start()' for an HTML browser interface to help.
 Type 'q()' to quit R.
 
-> source("msnet_simu_fun.R")
-> 
+> source("msnet_simu_fun2.R")
+> library(Rmpi)
+> library(snow)
 > 
 > cl=makeCluster(30)
-> clusterEvalQ(cl,{library(Matrix);source("senet.R")})
+	30 slaves are spawned successfully. 0 failed.
+> clusterEvalQ(cl,{library(Matrix);source("senet.R");source("utils.R")})
 [[1]]
 [[1]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[1]]$visible
@@ -38,12 +94,66 @@ function (t, px)
 
 [[2]]
 [[2]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[2]]$visible
@@ -52,12 +162,66 @@ function (t, px)
 
 [[3]]
 [[3]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[3]]$visible
@@ -66,12 +230,66 @@ function (t, px)
 
 [[4]]
 [[4]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[4]]$visible
@@ -80,12 +298,66 @@ function (t, px)
 
 [[5]]
 [[5]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[5]]$visible
@@ -94,12 +366,66 @@ function (t, px)
 
 [[6]]
 [[6]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[6]]$visible
@@ -108,12 +434,66 @@ function (t, px)
 
 [[7]]
 [[7]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[7]]$visible
@@ -122,12 +502,66 @@ function (t, px)
 
 [[8]]
 [[8]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[8]]$visible
@@ -136,12 +570,66 @@ function (t, px)
 
 [[9]]
 [[9]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[9]]$visible
@@ -150,12 +638,66 @@ function (t, px)
 
 [[10]]
 [[10]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[10]]$visible
@@ -164,12 +706,66 @@ function (t, px)
 
 [[11]]
 [[11]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[11]]$visible
@@ -178,12 +774,66 @@ function (t, px)
 
 [[12]]
 [[12]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[12]]$visible
@@ -192,12 +842,66 @@ function (t, px)
 
 [[13]]
 [[13]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[13]]$visible
@@ -206,12 +910,66 @@ function (t, px)
 
 [[14]]
 [[14]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[14]]$visible
@@ -220,12 +978,66 @@ function (t, px)
 
 [[15]]
 [[15]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[15]]$visible
@@ -234,12 +1046,66 @@ function (t, px)
 
 [[16]]
 [[16]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[16]]$visible
@@ -248,12 +1114,66 @@ function (t, px)
 
 [[17]]
 [[17]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[17]]$visible
@@ -262,12 +1182,66 @@ function (t, px)
 
 [[18]]
 [[18]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[18]]$visible
@@ -276,12 +1250,66 @@ function (t, px)
 
 [[19]]
 [[19]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[19]]$visible
@@ -290,12 +1318,66 @@ function (t, px)
 
 [[20]]
 [[20]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[20]]$visible
@@ -304,12 +1386,66 @@ function (t, px)
 
 [[21]]
 [[21]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[21]]$visible
@@ -318,12 +1454,66 @@ function (t, px)
 
 [[22]]
 [[22]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[22]]$visible
@@ -332,12 +1522,66 @@ function (t, px)
 
 [[23]]
 [[23]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[23]]$visible
@@ -346,12 +1590,66 @@ function (t, px)
 
 [[24]]
 [[24]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[24]]$visible
@@ -360,12 +1658,66 @@ function (t, px)
 
 [[25]]
 [[25]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[25]]$visible
@@ -374,12 +1726,66 @@ function (t, px)
 
 [[26]]
 [[26]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[26]]$visible
@@ -388,12 +1794,66 @@ function (t, px)
 
 [[27]]
 [[27]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[27]]$visible
@@ -402,12 +1862,66 @@ function (t, px)
 
 [[28]]
 [[28]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[28]]$visible
@@ -416,12 +1930,66 @@ function (t, px)
 
 [[29]]
 [[29]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[29]]$visible
@@ -430,17 +1998,145 @@ function (t, px)
 
 [[30]]
 [[30]]$value
-function (t, px) 
+function (data, ctr = ctr, jobid = 0, df) 
 {
-    (floor(0.2 * px) < t && t < floor(0.4 * px)) * ((-1) * (floor(0.3 * 
-        px) - t)^2 + px)/(2 * px) + (floor(0.6 * px) < t && t < 
-        floor(0.8 * px)) * ((floor(0.7 * px) - t)^2 - px)/(2 * 
-        px)
+    Data = list(X = as.matrix(bdiag(data$X)), y = c(data$Y), 
+        beta = c(data$B), X_test = as.matrix(bdiag(data$X_test)), 
+        y_test = c(data$Y_test), p1x = data$p1x, p2x = data$p2x, 
+        p1y = data$p1y, p2y = data$p2y)
+    px = dim(data$B)[1]
+    py = dim(data$B)[2]
+    n = dim(data$X[[1]])[1]
+    n_test = dim(data$X_test[[1]])[1]
+    lx = ctr$lx
+    ly = ctr$ly
+    muy = ctr$muy
+    if (lx == "1d") {
+        Lpx = crossprod(fd(px))
+    }
+    else if (lx == "2d") {
+        Lpx = genlap(p1x, p2x)$L
+    }
+    else if (lx == "cor") {
+        Lpx = cor(data$X[[1]])
+    }
+    if (lx == "1d") {
+        Lpy = crossprod(fd(py))
+    }
+    else if (lx == "2d") {
+        Lpy = genlap(p1y, p2y)$L
+    }
+    else if (lx == "cor") {
+        Lpy = cor(data$Y)
+    }
+    Lx = kronecker(Lpx, diag(rep(1, py)))
+    Ly = kronecker(Lpy, diag(rep(1, px)))
+    P = matrix(0, px * py, px * py)
+    for (i in 1:px) {
+        for (j in 1:py) {
+            P[(i - 1) * py + j, (j - 1) * px + i] = 1
+        }
+    }
+    Lx = t(P) %*% Lx %*% P
+    Lambda = muy * Ly + (1 - muy) * Lx
+    lambda1 = ctr$lambda1
+    lambda2 = ctr$lambda2
+    stepsize = ctr$stepsize
+    ctr$L = ifelse(stepsize == "fixed", Ll2(Data$X, Lambda, lambda2 = lambda2), 
+        NULL)
+    out = senet_fista(Data$X, Data$y, Lambda, lossfun = l2loss, 
+        gradfun = l2grad, lambda1 = lambda1, lambda2 = lambda2, 
+        stepsize = stepsize, control = ctr)
+    Bhat = matrix(out$beta, byrow = FALSE, nrow = px, ncol = py)
+    Y_test_hat = as.matrix(bdiag(Data$X_test)) %*% (out$beta)
+    E_test = sqrt(mean((c(Data$y_test) - Y_test_hat)^2))
+    slist = list(fit = out, input = list(B = data$B, px = px, 
+        py = py, n = n, Lambda = Lambda, lambda1 = lambda1, lambda2 = lambda2, 
+        muy = muy), output = list(Bhat = Bhat, rmse_test = E_test, 
+        Y_test = Data$y_test, Y_test_hat = Y_test_hat, obj = out$obj))
+    fname = paste0("./results/n", n, "px", px, "py", py, "job", 
+        jobid)
+    save(slist, file = paste0(fname, ".RData"))
+    return()
 }
 
 [[30]]$visible
 [1] FALSE
 
 
-> clusterExport(cl,c("paras","betastar","ctr","P","GL","Lambda","Lambda2","Lambda3","df")) #clusterCall(cl,print,a+b)
-> clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,betastar,Lambda2,"fixed",T,df,"2")
+> clusterExport(cl,c("ctr","c1","df")) #clusterCall(cl,print,a+b)
+> clusterApplyLB(cl, 1:nrow(df), simu,ctr,c1,df)
+[[1]]
+NULL
+
+[[2]]
+NULL
+
+[[3]]
+NULL
+
+[[4]]
+NULL
+
+[[5]]
+NULL
+
+[[6]]
+NULL
+
+[[7]]
+NULL
+
+[[8]]
+NULL
+
+[[9]]
+NULL
+
+[[10]]
+NULL
+
+[[11]]
+NULL
+
+[[12]]
+NULL
+
+[[13]]
+NULL
+
+[[14]]
+NULL
+
+[[15]]
+NULL
+
+> stopCluster(cl)
+[1] 1
+> 
+> save(ctr,c1,df,file = "./results/df.RData")
+> 
+--------------------------------------------------------------------------
+mpirun has exited due to process rank 0 with PID 42470 on
+node compute-0-081 exiting improperly. There are three reasons this could occur:
+
+1. this process did not call "init" before exiting, but others in
+the job did. This can cause a job to hang indefinitely while it waits
+for all processes to call "init". By rule, if one process calls "init",
+then ALL processes must call "init" prior to termination.
+
+2. this process called "init", but exited without calling "finalize".
+By rule, all processes that call "init" MUST call "finalize" prior to
+exiting or it will be considered an "abnormal termination"
+
+3. this process called "MPI_Abort" or "orte_abort" and the mca parameter
+orte_create_session_dirs is set to false. In this case, the run-time cannot
+detect that the abort call was an abnormal termination. Hence, the only
+error message you will receive is this one.
+
+This may have caused other processes in the application to be
+terminated by signals sent by mpirun (as reported here).
+
+You can avoid this message by specifying -quiet on the mpirun command line.
+
+--------------------------------------------------------------------------

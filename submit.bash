@@ -13,14 +13,14 @@
 #SBATCH --time=23:59:59
 #################
 #number of tasks you are requesting 
-#SBATCH -n 40
+#SBATCH -n 90
 #SBATCH --exclusive
 #################
 #partition to use
-#SBATCH --partition=ser-par-10g-3
+#SBATCH --partition=ser-par-10g-4
 #################
 #number of nodes to distribute n tasks across 
-#SBATCH -N 1
+#SBATCH -N 3
 #################
 
 #SB ATCH --nodes=3
