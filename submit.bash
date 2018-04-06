@@ -13,24 +13,17 @@
 #SBATCH --time=23:59:59
 #################
 #number of tasks you are requesting 
-#SBATCH -n 90
+#SBATCH -n 360
 #SBATCH --exclusive
 #################
 #partition to use
-#SBATCH --partition=ser-par-10g-4
+#SBATCH --partition=ser-par-10g-2
 #################
 #number of nodes to distribute n tasks across 
-#SBATCH -N 3
+#SBATCH -N 9
 #################
-
-#SB ATCH --nodes=3
-#SB ATCH --ntasks-per-node=40
-
 work=/home/li.yi3/122916_msnet
-
 cd $work
-
 #mpirun -np 1 R --no-save < test_snow.R
-
 mpirun -np 1 -oversubscribe R --no-save < msnet_simu.R
 #R CMD BATCH ./snow_test.R

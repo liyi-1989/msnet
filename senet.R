@@ -211,7 +211,7 @@ senet_fista <- function(X, y, Lambda, lossfun, gradfun, lambda1, lambda2,
       kktopt <- c(kktopt, max(kktA, kktAc))
       
       ###
-      objnew <- lossbetanew + t(betanew) %*% Lambdatimesbetanew + lambda1 * sum(abs(betanew) * weights)
+      objnew <- lossbetanew + t(betanew) %*% Lambdatimesbetanew + lambda1 * sum(abs(betanew) * weights)#;print(objs)
       if(objnew < min(objs))
         betahat <- betanew
       objs <- c(objs, objnew)
@@ -327,60 +327,63 @@ Llogistic <- function(X, Lambda, lambda2){
   
 ### 1st example: two bumps
 
-#### 
-#simblock1d <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,dataseed=1,...){
-#  set.seed(dataseed)
-#  Xt <- matrix(ncol = p, nrow = n)
-#  for(i in 1:n){
-#    bi <- runif(5, 0, 5)
-#    mi <- runif(5, 0, 2*pi)
-#    Xt[i,]  <- sapply(1:p, function(z) sum(bi * sin(z*pi*(5-bi)/50-mi))) + rnorm(p, sd=noise.signal)
-#  }
-#  y <- Xt %*% beta + rnorm(n, sd=noise.response)
-#  return(list(Xt = Xt, y=y, beta = beta))
-#}
-#                      
-#                      
-#fd <- function(p){
-#  D <- matrix(nrow = p-1, ncol = p, data = 0)
-#  for(i in 1:(p-1)){
-#    D[i,i] <- 1
-#    D[i,i+1] <- -1
-#  }
-#  D
-#} 
-#
-#twobump=function(t,px){
-#  (floor(0.2*px) < t && t < floor(0.4*px))*((-1)*(floor(0.3*px) - t)^2+px)/(2*px) +
-#  (floor(0.6*px) < t && t < floor(0.8*px))*((floor(0.7*px) - t)^2-px)/(2*px)
-#}
-#
-#onebump=function(t,px){
-#  (floor(0.2*px) < t && t < floor(0.4*px))*((-1)*(floor(0.3*px) - t)^2+px)/(2*px)
-#}
-## a=sapply(1:px, function(t) (20 < t && t < 40)*((-1)*(30 - t)^2+100)/200 +
-##          (60 < t && t < 80)*((70 - t)^2-100)/200)
-#
-#fourblock=function(t,px){
-#  (floor(0.2*px) < t && t <= floor(0.3*px))*0.5+
-#  (floor(0.3*px) < t && t <= floor(0.4*px))*1+
-#  (floor(0.4*px) < t && t <= floor(0.5*px))*0.5+
-#  (floor(0.5*px) < t && t <= floor(0.6*px))*0.25
-#}
-#
-#simblock1d2 <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,dataseed=1,...){
-#  set.seed(dataseed)
-#  Xt <- matrix(ncol = p, nrow = n)
-#  for(i in 1:n){
-#    Mp=rep(0,p)  
-#    Ip=diag(rep(1,p))
-#    Xt[i,] = mvrnorm(1,Mp,Ip)
-#  }
-#  y <- Xt %*% beta + rnorm(n, sd=noise.response)
-#  return(list(Xt = Xt, y=y, beta = beta))
-#}
+###
+simblock1d <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,dataseed=1,...){
+ set.seed(dataseed)
+ Xt <- matrix(ncol = p, nrow = n)
+ for(i in 1:n){
+   bi <- runif(5, 0, 5)
+   mi <- runif(5, 0, 2*pi)
+   Xt[i,]  <- sapply(1:p, function(z) sum(bi * sin(z*pi*(5-bi)/50-mi))) + rnorm(p, sd=noise.signal)
+ }
+ y <- Xt %*% beta + rnorm(n, sd=noise.response)
+ return(list(Xt = Xt, y=y, beta = beta))
+}
 
 
+fd <- function(p){
+ D <- matrix(nrow = p-1, ncol = p, data = 0)
+ for(i in 1:(p-1)){
+   D[i,i] <- 1
+   D[i,i+1] <- -1
+ }
+ D
+}
+
+twobump=function(t,px){
+ (floor(0.2*px) < t && t < floor(0.4*px))*((-1)*(floor(0.3*px) - t)^2+px)/(2*px) +
+ (floor(0.6*px) < t && t < floor(0.8*px))*((floor(0.7*px) - t)^2-px)/(2*px)
+}
+
+onebump=function(t,px){
+ (floor(0.2*px) < t && t < floor(0.4*px))*((-1)*(floor(0.3*px) - t)^2+px)/(2*px)
+}
+# a=sapply(1:px, function(t) (20 < t && t < 40)*((-1)*(30 - t)^2+100)/200 +
+#          (60 < t && t < 80)*((70 - t)^2-100)/200)
+
+fourblock=function(t,px){
+ (floor(0.2*px) < t && t <= floor(0.3*px))*0.5+
+ (floor(0.3*px) < t && t <= floor(0.4*px))*1+
+ (floor(0.4*px) < t && t <= floor(0.5*px))*0.5+
+ (floor(0.5*px) < t && t <= floor(0.6*px))*0.25
+}
+
+simblock1d2 <- function(n, p=100, noise.signal = 0.25, noise.response = 30, beta,dataseed=1,...){
+ set.seed(dataseed)
+ Xt <- matrix(ncol = p, nrow = n)
+ for(i in 1:n){
+   Mp=rep(0,p)
+   Ip=diag(rep(1,p))
+   Xt[i,] = mvrnorm(1,Mp,Ip)
+ }
+ y <- Xt %*% beta + rnorm(n, sd=noise.response)
+ return(list(Xt = Xt, y=y, beta = beta))
+}
+
+# print a matrix with heatmap, in a hand written order, left->right, up->down (no need to rotate)
+printM=function(M){
+  image(as(M, "dgCMatrix"),main=deparse(substitute(M)))
+}
 
 
 

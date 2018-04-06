@@ -1,7 +1,8 @@
 .Rhistory
-.Rproj.user/*
+.Rproj.user/
 .ipynb_checkpoints/*
 results/*
 Rproj*
 run1.err
 run1.out 
+.Rproj.user

@@ -2,21 +2,26 @@ source("msnet_simu_fun.R")
 # Test parallel
 #t0=proc.time()
 cl=makeCluster(nrow(df))
-clusterEvalQ(cl,{library(Matrix);source("senet.R")})
-clusterExport(cl,c("paras","betastar","ctr","P","Lx","Ly","df")) #clusterCall(cl,print,a+b)
-clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,betastar,Lx,Ly,"fixed",T,df,"b")
-#clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,betastar,Lambda2,"fixed",T,df,"2")
+clusterEvalQ(cl,{library(glmnet);library(Matrix);source("senet.R")})
+clusterExport(cl,c("paras","ctr","df")) #clusterCall(cl,print,a+b)
+clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,"fixed",T,df,"b")
+#clusterApplyLB(cl, 1:nrow(df), simu, T, paras,ctr,betastar,Lx,Ly,"fixed",T,df,"b")
 stopCluster(cl)
 #t2=proc.time()-t0
 
 
 # Test code
-
-# res1=simu(paras,ctr,betastar,Lambda)
-# res2=simu(paras,ctr,betastar,Lambda2,jobid = 2)
+# res1=simu(jobid=1,fixdata=T,paras,ctr,stepsize = "fixed",par=T,df=df,type=NULL)
+# #res2=simu(jobid=1,fixdata=T,paras,ctr,betastar,Lambda2)
 # 
+# par(mfrow=c(1,2))
 # image(res1$input$B)
-# 
+# image(res1$output$Bhat)
+# plot(res1$input$B[1,],col="blue")
+# plot(res1$output$Bhat[1,],col="red")
+# printM(res1$input$B)
+# printM(res1$output$Bhat)
+
 # cat(norm(res1$input$B-res1$output$Bhat,"F"),"\n")
 # image(res1$output$Bhat)
 # 
