@@ -63,6 +63,41 @@
 ##########################################################################
 library(MASS)
 
+
+cv.msenet_fista=function(nfold=5,py,X,y,Lambda,lossfun,gradfun,lambda1s,lambda2s,stepsize="fixed",control){
+  n=nrow(X)/py
+  px=ncol(X)/py
+  idcv=sample(1:nfold,n,replace = T)
+  idCV=rep(idcv,py)
+  nl1=length(lambda1s)
+  nl2=length(lambda2s)
+  
+  CVERR=array(0,c(nl1,nl2,nfold))
+  
+  for(i in 1:nl1){
+    for(j in 1:nl2){
+      cat("Working on parameter l1:",lambda1s[i],",l2:",lambda2s[j],"...\n")
+      for(k in 1:nfold){
+        cat("---------fold:",k,"---------\n")
+        idtrain=(idCV!=k)
+        idval=(idCV==k)
+        X_0=X[idtrain,]; y_0=y[idtrain]; X_1=X[idval,]; y_1=y[idval]
+        fitt=senet_fista(X=X_0,y=y_0,Lambda=Lambda,lossfun=lossfun,gradfun=gradfun,lambda1=lambda1s[i],lambda2=lambda2s[j],stepsize=stepsize,control=control)
+        CVERR[i,j,k]=sqrt(mean((y_1-X_1%*%fitt$beta)^2))
+        
+      }
+    }
+  }
+  
+  CVerr=apply(CVERR,c(1,2),mean)
+  ij=which(CVerr==min(CVerr),arr.ind = T)
+  istar=ij[1,1]
+  jstar=ij[1,2]
+  fit=senet_fista(X=X,y=y,Lambda=Lambda,lossfun=lossfun,gradfun=gradfun,lambda1=lambda1s[istar],lambda2=lambda2s[jstar],stepsize=stepsize,control=control)
+  return(list(beta=fit$beta,fit=fit,lambda1=lambda1s[istar],lambda2=lambda2s[jstar],CVERR=CVERR))
+}
+
+
 senet_fista <- function(X, y, Lambda, lossfun, gradfun, lambda1, lambda2,
                         stepsize = c("fixed", "backtracking"),
                         control = list(weights = 1,
@@ -171,6 +206,7 @@ senet_fista <- function(X, y, Lambda, lossfun, gradfun, lambda1, lambda2,
   betahat <- gamma ### the iterate to be returned.
   ###
   k <- 0 ### iteration counter
+  mu=1
   stopcond <- FALSE
   t <- 1 ### initialization of stepsize (if back-tracking is used)
   
@@ -255,9 +291,16 @@ senet_fista <- function(X, y, Lambda, lossfun, gradfun, lambda1, lambda2,
       objs <- c(objs, objnew)
            
     }
+    
+    # munew=(1+sqrt(1+4*mu^2))/2
+    # gamma=betanew + ((mu-1)/munew) * (betanew - beta)
+    # mu=munew
+    
     gamma <- betanew + k/(k + 3) * (betanew - beta)
+    
+    
     delta <- sqrt( sum((beta - betanew)^2))
-    if( delta < tol){
+    if( delta < tol & k>2){
       beta <- betanew
       stopcond <- TRUE 
     }
@@ -348,6 +391,34 @@ fd <- function(p){
    D[i,i+1] <- -1
  }
  D
+}
+
+gridlap=function(px,py){
+  W=matrix(0,px*py,px*py)
+  # weight matrix
+  # for(i in 1:(px*py)){
+  #   if(i%%py!=0){
+  #     W[i,i+1]=W[i+1,i]=1
+  #   }
+  #   if(i+py<=px*py){
+  #     W[i,i+py]=W[i+py,i]=1
+  #   }
+  # }
+  
+  for(i in 1:(px*py)){
+    for(j in 1:(px*py)){
+      i1=i%/%py; j1=ifelse(i%%py==0,py,i%%py)
+      i2=j%/%py; j2=ifelse(j%%py==0,py,j%%py)
+      dd=sqrt((i1-i2)^2+(j1-j2)^2)
+      if(dd<=sqrt(1) & dd>0){
+        W[i,j]=1/dd
+      }
+    }
+  }
+  
+  # weight to laplacian matrix
+  D=diag(colSums(W))
+  return(D-W)
 }
 
 twobump=function(t,px){
